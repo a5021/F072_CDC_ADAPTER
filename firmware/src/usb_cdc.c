@@ -3,12 +3,11 @@
 
 #define PMA_BASE      0x40006000UL
 #define BTABLE_TBL    ((volatile uint16_t *)(PMA_BASE))
-#define BTABLE_DW     ((volatile uint32_t *)(PMA_BASE))
 #define PMA(n)        ((volatile uint16_t *)(PMA_BASE + (n)))
 
 static inline void ep_set_tx(uint8_t ep, uint16_t addr, uint16_t count)
 {
-    BTABLE_DW[ep * 2u] = addr;              /* PMA word 0 needs 32-bit write */
+    BTABLE_TBL[ep * 4u] = addr;              /* TX address */
     BTABLE_TBL[ep * 4u + 1u] = count;
 }
 static inline void ep_set_rx(uint8_t ep, uint16_t addr, uint16_t count)
@@ -65,7 +64,7 @@ static uint8_t pending_address;
 static const uint8_t dev_desc[] = {
     18, 0x01,                   /* bLength, bDescriptorType */
     0x00, 0x02,                 /* bcdUSB 2.0 */
-    0x02, 0x02, 0x01,           /* CDC: class/subclass/protocol */
+    0xEF, 0x02, 0x01,           /* IAD: class/subclass/protocol */
     0x40,                       /* bMaxPacketSize0 */
     0x83, 0x04,                 /* idVendor 0x0483 */
     0x40, 0x57,                 /* idProduct 0x5740 */
@@ -76,7 +75,9 @@ static const uint8_t dev_desc[] = {
 
 static const uint8_t cfg_desc[] = {
     /* configuration */
-    9, 0x02, 0x43, 0x00, 0x02, 0x02, 0x00, 0x80, 0x32,
+    9, 0x02, 0x4B, 0x00, 0x02, 0x02, 0x00, 0x80, 0x32,
+    /* IAD: CDC ACM, interfaces 0-1 */
+    8, 0x0B, 0x00, 0x02, 0x02, 0x02, 0x01, 0x00,
     /* interface 0: CDC control */
     9, 0x04, 0x00, 0x00, 0x01, 0x02, 0x02, 0x01, 0x00,
     /* header */
@@ -148,7 +149,8 @@ static void usb_reset_init(void)
     USB->EP2R = EP_TYPE_INTR | 0x02u | EP_TX_NAK;
 
     USB->ISTR = 0;
-    USB->CNTR = USB_CNTR_CTRM | USB_CNTR_RESETM | USB_CNTR_SUSPM | USB_CNTR_WKUPM;
+    USB->CNTR = USB_CNTR_CTRM | USB_CNTR_RESETM | USB_CNTR_SUSPM |
+                USB_CNTR_WKUPM | USB_CNTR_ERRM | USB_CNTR_SOFM | USB_CNTR_ESOFM;
 
     tx_len = tx_off = 0;
     tx_active = 0;
@@ -320,6 +322,7 @@ static void handle_rx(volatile uint16_t *epr, uint8_t ep)
         USB->EP1R = (USB->EP1R & EP_MASK & ~EP_CTR_RX) | EP_RX_VALID | EP_TX_NAK;
     }
 }
+
 
 void USB_LP_CAN1_RX0_IRQHandler(void)
 {
