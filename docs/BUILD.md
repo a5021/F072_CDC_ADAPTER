@@ -1,7 +1,8 @@
 # Build and flash
 
-CMSIS is fetched from GitHub at configure time (pinned revisions in
-`CMakeLists.txt`); nothing is vendored.
+Target: STM32F103CBT6 (Cortex-M3, 128 KB flash, 20 KB SRAM, HSE 8 MHz,
+SYSCLK 72 MHz, USB clock 48 MHz). CMSIS is fetched from GitHub at configure
+time (pinned revisions in `CMakeLists.txt`); nothing is vendored.
 
 ```
 cmake -S . -B build -G "Unix Makefiles" \

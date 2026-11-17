@@ -5,7 +5,7 @@
 | I2C1_SCL | PB6 | AF1, open-drain, no internal pull-up |
 | I2C1_SDA | PB7 | AF1, open-drain, no internal pull-up |
 | I2C1_SCL/SDA (reserve) | PB8/PB9 | not used by default |
-| USB D-/D+ | PA11/PA12 | CDC/VCOM |
+| USB D-/D+ | PA11/PA12 | CDC/VCOM, external 1.5 kOhm pull-up on D+ required |
 | SWDIO/SWCLK | PA13/PA14 | ST-Link |
 | nRST (target) | PB1 | push-pull, active low |
 | TRIG | PB12 | push-pull, active low pulse |

@@ -1,5 +1,5 @@
 #include "usb_cdc.h"
-#include "stm32f0xx.h"
+#include "stm32f1xx.h"
 
 #define PMA_BASE      0x40006000UL
 #define BTABLE_TBL    ((volatile uint16_t *)(PMA_BASE))
@@ -11,9 +11,9 @@
 #define EP1_TX_ADDR   0x100u
 #define EP2_TX_ADDR   0x140u
 
-#define EP_TYPE_CONTROL 0x0000u
-#define EP_TYPE_BULK    0x0400u
-#define EP_TYPE_INTR    0x0600u
+#define EP_TYPE_CONTROL USB_EP_CONTROL
+#define EP_TYPE_BULK    USB_EP_BULK
+#define EP_TYPE_INTR    USB_EP_INTERRUPT
 
 #define EP_TX_NAK   0x0020u
 #define EP_TX_VALID 0x0030u
@@ -140,14 +140,10 @@ void usb_cdc_init(void)
     rx_overflow = 0;
 
     RCC->APB1ENR |= RCC_APB1ENR_USBEN;
-    RCC->CFGR3 &= ~RCC_CFGR3_USBSW;
-    if ((RCC->CFGR & RCC_CFGR_SWS_Msk) == RCC_CFGR_SWS_PLL)
-        RCC->CFGR3 |= RCC_CFGR3_USBSW_PLLCLK;   /* PLL 48 MHz */
-    /* else: HSI48 selected, USBSW=0 */
+    /* USB clock = PLL/1.5 (48 MHz), selected in SystemInit via USBPRE=0. */
 
-    NVIC_EnableIRQ(USB_IRQn);
+    NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
     usb_reset_init();
-    USB->BCDR |= USB_BCDR_DPPU;              /* connect pull-up */
 }
 
 static void send_ctrl(const uint8_t *data, uint16_t len)
@@ -307,7 +303,7 @@ static void handle_rx(volatile uint16_t *epr, uint8_t ep)
     }
 }
 
-void USB_IRQHandler(void)
+void USB_LP_CAN1_RX0_IRQHandler(void)
 {
     uint16_t istr = USB->ISTR;
     if (istr & USB_ISTR_RESET) {

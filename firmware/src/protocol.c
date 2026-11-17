@@ -7,7 +7,7 @@
 #include "stats.h"
 #include "timing.h"
 #include "string.h"
-#include "stm32f0xx.h"
+#include "stm32f1xx.h"
 
 #define FW_VERSION 0x0100u
 #define CAPS       0x00000007u   /* capture, script, clock-stretch */
@@ -108,10 +108,14 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
             if (rlen == 0u || rlen > PAYLOAD_MAX - 8u) return ST_BAD_PARAM;
             if (gap == 0u && cmd == CMD_WRITE_READ) gap = turnaround_us;
             uint32_t t0 = timing_us();
-            uint8_t st = i2c_write(addr, p + 2u, wlen, I2C_FLAG_STOP);
+            uint8_t st = i2c_write(addr, p + 2u, wlen,
+                                   (cmd == CMD_REP_START) ? 0u : I2C_FLAG_STOP);
             if (st != ST_OK) return st;
             if (gap) delay_us(gap);
-            st = i2c_read(addr, resp, rlen, I2C_FLAG_STOP);
+            st = i2c_read(addr, resp, rlen,
+                          (cmd == CMD_REP_START)
+                              ? (uint8_t)(I2C_FLAG_STOP | I2C_FLAG_RESTART)
+                              : I2C_FLAG_STOP);
             uint32_t t1 = timing_us();
             if (st != ST_OK) return st;
             put32(resp + rlen, t0);

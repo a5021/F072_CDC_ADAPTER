@@ -1,10 +1,10 @@
 #include "timing.h"
-#include "stm32f0xx.h"
+#include "stm32f1xx.h"
 
 void timing_init(void)
 {
     RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
-    TIM2->PSC = 48u - 1u;               /* APB1 timer clock = 48 MHz */
+    TIM2->PSC = 72u - 1u;               /* TIM2 clock = 72 MHz (APB1 x2) */
     TIM2->ARR = 0xFFFFFFFFu;
     TIM2->EGR = TIM_EGR_UG;
     TIM2->SR  = 0;

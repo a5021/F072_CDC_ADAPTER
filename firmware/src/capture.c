@@ -2,7 +2,7 @@
 #include "timing.h"
 #include "stats.h"
 #include "hw_defs.h"
-#include "stm32f0xx.h"
+#include "stm32f1xx.h"
 
 #define CAP_FLAG_MARK 0x08u
 
@@ -15,16 +15,16 @@ static volatile uint8_t chan_mask;
 
 void capture_init(void)
 {
-    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+    RCC->APB2ENR |= RCC_APB2ENR_AFIOEN;
     /* EXTI lines 6/7 from GPIOB. */
-    SYSCFG->EXTICR[1] &= ~(0xFu << (4u * 2u)) & ~(0xFu << (4u * 3u));
-    SYSCFG->EXTICR[1] |= (0x1u << (4u * 2u)) | (0x1u << (4u * 3u));
+    AFIO->EXTICR[1] &= ~(0xFu << (4u * 2u)) & ~(0xFu << (4u * 3u));
+    AFIO->EXTICR[1] |= (0x1u << (4u * 2u)) | (0x1u << (4u * 3u));
 
     EXTI->IMR  &= ~((1u << 6u) | (1u << 7u));
     EXTI->RTSR |=  (1u << 6u) | (1u << 7u);
     EXTI->FTSR |=  (1u << 6u) | (1u << 7u);
     EXTI->PR    =  (1u << 6u) | (1u << 7u);
-    NVIC_EnableIRQ(EXTI4_15_IRQn);
+    NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 void capture_start(uint8_t channel_mask, uint16_t max_events)
@@ -67,7 +67,7 @@ void capture_mark(uint8_t label)
     push_event(timing_us(), (uint8_t)(CAP_FLAG_MARK | (label & 0x07u)));
 }
 
-void EXTI4_15_IRQHandler(void)
+void EXTI9_5_IRQHandler(void)
 {
     uint32_t pr = EXTI->PR & ((1u << 6u) | (1u << 7u));
     if (!pr) return;

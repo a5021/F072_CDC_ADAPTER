@@ -1,7 +1,9 @@
 # F072_CDC_ADAPTER
 
-USB (CDC/VCOM) to I2C master adapter firmware for STM32F072RB, built to replace
-the CH341A in the `owbridge` test bench. All test scripts run on the host; the
+USB (CDC/VCOM) to I2C master adapter firmware, built to replace the CH341A in
+the `owbridge` test bench. The bench board was identified as STM32G0 (no USB),
+so the firmware now targets **STM32F103CBT6** (Blue Pill class: 128 KB flash,
+20 KB SRAM, USB from PLL/1.5). The repository name is historical. All test scripts run on the host; the
 adapter adds programmable STOP-to-START turnaround, microsecond timestamps,
 in-firmware transaction scripts and an SCL/SDA capture buffer.
 

@@ -5,35 +5,26 @@
 #include "usb_cdc.h"
 #include "protocol.h"
 #include "stats.h"
-#include "stm32f0xx.h"
+#include "stm32f1xx.h"
 
-uint32_t SystemCoreClock = 48000000UL;
+uint32_t SystemCoreClock = 72000000UL;
 
 void SystemInit(void)
 {
-    /* HSE 8 MHz -> PLL x6 -> 48 MHz; HSI48 + CRS as fallback. */
-    FLASH->ACR = FLASH_ACR_LATENCY | FLASH_ACR_PRFTBE;
-    volatile uint32_t spin = 0;
+    /* HSE 8 MHz -> PLL x9 -> 72 MHz SYSCLK; USB clock = PLL/1.5 = 48 MHz. */
+    FLASH->ACR = FLASH_ACR_LATENCY_2 | FLASH_ACR_PRFTBE;
     RCC->CR |= RCC_CR_HSEON;
-    while ((RCC->CR & RCC_CR_HSERDY) == 0u && spin++ < 500000u) { }
+    while ((RCC->CR & RCC_CR_HSERDY) == 0u) { }
 
-    if (RCC->CR & RCC_CR_HSERDY) {
-        RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_PLLSRC_Msk & ~RCC_CFGR_PLLMUL_Msk &
-                     ~RCC_CFGR_PPRE_Msk & ~RCC_CFGR_HPRE_Msk) |
-                    RCC_CFGR_PLLSRC_HSE_PREDIV | RCC_CFGR_PLLMUL6;
-        RCC->CR |= RCC_CR_PLLON;
-        while ((RCC->CR & RCC_CR_PLLRDY) == 0u) { }
-        RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_SW_Msk) | RCC_CFGR_SW_PLL;
-        while ((RCC->CFGR & RCC_CFGR_SWS_Msk) != RCC_CFGR_SWS_PLL) { }
-    } else {
-        RCC->APB1ENR |= RCC_APB1ENR_CRSEN;
-        RCC->CR2 |= RCC_CR2_HSI48ON;
-        while ((RCC->CR2 & RCC_CR2_HSI48RDY) == 0u) { }
-        CRS->CFGR = (48000u - 1u) | (0x20u << 16) | (uint32_t)CRS_CFGR_SYNCSRC_1;
-        CRS->CR = CRS_CR_CEN | CRS_CR_AUTOTRIMEN;
-        RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_SW_Msk) | RCC_CFGR_SW_HSI48;
-        while ((RCC->CFGR & RCC_CFGR_SWS_Msk) != RCC_CFGR_SWS_HSI48) { }
-    }
+    RCC->CFGR = (RCC->CFGR & ~(RCC_CFGR_PLLMULL | RCC_CFGR_PPRE1 |
+                               RCC_CFGR_PPRE2 | RCC_CFGR_HPRE |
+                               RCC_CFGR_USBPRE | RCC_CFGR_ADCPRE)) |
+                RCC_CFGR_PLLSRC | RCC_CFGR_PLLMULL9 |
+                RCC_CFGR_PPRE1_DIV2 | RCC_CFGR_USBPRE;  /* USBPRE=0: /1.5 */
+    RCC->CR |= RCC_CR_PLLON;
+    while ((RCC->CR & RCC_CR_PLLRDY) == 0u) { }
+    RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_SW) | RCC_CFGR_SW_PLL;
+    while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) { }
 }
 
 static void watchdog_init(void)
