@@ -150,6 +150,7 @@ class F072I2C:
     def __init__(self, port=None, address=0x30, speed_khz=100, turnaround_us=15,
                  baudrate=921600, timeout=3.0, trace=None, retries=4):
         self.address = address
+        self.speed_khz = speed_khz
         self.turnaround_us = turnaround_us
         self.repeated_start = False
         self.trace = trace
