@@ -1,4 +1,6 @@
 ENTRY(Reset_Handler)
+USB     = 0x40005C00;
+USB_PMA = 0x40006000;
 _estack = ORIGIN(RAM) + LENGTH(RAM);
 
 MEMORY

@@ -1,34 +1,28 @@
 # Build and flash
 
 Target: STM32F103CBT6 (Cortex-M3, 128 KB flash, 20 KB SRAM, HSE 8 MHz,
-SYSCLK 72 MHz, USB clock 48 MHz). CMSIS is fetched from GitHub at configure
-time (pinned revisions in `CMakeLists.txt`); nothing is vendored.
+SYSCLK 72 MHz, USB 48 MHz via PLL/1.5).
+
+The firmware uses the public STM32Cube HAL + ST USB Device Library (CDC ACM)
+vendored under `firmware/usb_stack/` from https://github.com/philrawlings/bluepill-usb-cdc-test
+(BSD-3-Clause / ST license). Build with arm-none-eabi-gcc:
 
 ```
-cmake -S . -B build -G "Unix Makefiles" \
-  -DCMAKE_TOOLCHAIN_FILE=cmake/arm-none-eabi-gcc.cmake
-cmake --build build
+bash build_firmware.sh
 ```
 
-Outputs: `build/f072_adapter.elf`, `.bin`, `.hex`, `.map` and a size report.
+Outputs: `build/f072_adapter.elf`, `build/f072_adapter.bin`.
 
-Flash with ST-Link:
+Flash:
 
 ```
-st-flash write build/f072_adapter.bin 0x08000000
-# or
-openocd -f interface/stlink.cfg -f target/stm32f0x.cfg \
-  -c "program build/f072_adapter.elf verify reset exit"
+st-flash --serial <SERIAL> --connect-under-reset --reset write build/f072_adapter.bin 0x08000000
 ```
 
-Use the `.bin` file with `st-flash`; `--format ihex` with a `.hex` file writes
-ASCII unless specified.
-
-Host driver and tests:
+Host driver: `tools/f072_adapter.py` (`F072I2C`). Run host tests with:
 
 ```
 python -m unittest discover -s tests -v
 ```
 
-The driver is `tools/f072_adapter.py` (`F072I2C`). Point the owbridge tools
-at it with `--adapter f072 --port COMx` (or set `F072_PORT`).
+Note: after flashing, Windows may keep a stale COM port entry; replug USB once.

@@ -36,6 +36,7 @@ add_executable(f072_adapter
     firmware/src/i2c_master.c
     firmware/src/capture.c
     firmware/src/usb_cdc.c
+    firmware/src/usb.c
     firmware/src/protocol.c
     firmware/src/script.c
     firmware/src/stats.c

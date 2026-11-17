@@ -46,7 +46,7 @@ static void send_frame(uint8_t seq, uint8_t status, const uint8_t *payload, uint
     out[2] = status;
     put16(out + 3, len);
     if (len) memcpy(out + 5, payload, len);
-    uint16_t crc = crc16_ccitt(out + 1, (uint16_t)(5u + len));
+    uint16_t crc = crc16_ccitt(out + 1, (uint16_t)(4u + len));
     put16(out + 5u + len, crc);
     usb_cdc_write(out, (uint16_t)(7u + len));
 }
@@ -194,7 +194,7 @@ void protocol_poll(void)
 {
     static uint8_t byte;
     while (usb_cdc_available()) {
-        usb_cdc_read(&byte, 1);
+        if (usb_cdc_read(&byte, 1) == 0u) break;
 
         if (frame_len == 0u) {
             if (byte != FRAME_SOF) continue;
@@ -210,7 +210,7 @@ void protocol_poll(void)
             if (frame_len < want) continue;
 
             uint16_t crc = (uint16_t)(frame[want - 2u] | ((uint16_t)frame[want - 1u] << 8));
-            uint16_t calc = crc16_ccitt(frame + 1, (uint16_t)(5u + len));
+            uint16_t calc = crc16_ccitt(frame + 1, (uint16_t)(4u + len));
             uint8_t seq = frame[1];
             uint8_t cmd = frame[2];
             frame_len = 0;

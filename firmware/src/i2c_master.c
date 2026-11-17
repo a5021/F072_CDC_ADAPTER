@@ -4,7 +4,7 @@
 #include "hw_defs.h"
 #include "stm32f1xx.h"
 
-#define PCLK1_MHZ        36u
+#define PCLK1_MHZ        24u
 #define I2C_ERROR_MASK   (I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF)
 
 static uint16_t current_khz = 100u;
