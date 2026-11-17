@@ -9,7 +9,10 @@ middleware.** CMSIS-style register header is also from that project.
 
 ## Layout
 
-- `firmware/` — flat firmware sources + Makefile
+- `firmware/src/` — adapter application (protocol, I2C, capture, scripts)
+- `firmware/include/` — application headers
+- `firmware/vendor/` — open-source register-level USB stack + register header
+- `firmware/Makefile` — build
 - `tools/f072_adapter.py` — host driver (`F072I2C`)
 - `tests/` — host-side protocol tests
 
