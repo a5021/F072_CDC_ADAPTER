@@ -5,3 +5,9 @@ build/
 *.map
 __pycache__/
 *.pyc
+
+*.o
+*.elf
+*.bin
+*.hex
+*.map
