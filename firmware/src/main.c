@@ -20,7 +20,7 @@ void SystemInit(void)
                                RCC_CFGR_PPRE2 | RCC_CFGR_HPRE |
                                RCC_CFGR_USBPRE | RCC_CFGR_ADCPRE)) |
                 RCC_CFGR_PLLSRC | RCC_CFGR_PLLMULL9 |
-                RCC_CFGR_PPRE1_DIV2 | RCC_CFGR_USBPRE;  /* USBPRE=0: /1.5 */
+                RCC_CFGR_PPRE1_DIV2;  /* USBPRE=0: USB clock = PLL/1.5 = 48 MHz */
     RCC->CR |= RCC_CR_PLLON;
     while ((RCC->CR & RCC_CR_PLLRDY) == 0u) { }
     RCC->CFGR = (RCC->CFGR & ~RCC_CFGR_SW) | RCC_CFGR_SW_PLL;
@@ -44,6 +44,8 @@ int main(void)
     i2c_init();
     capture_init();
     usb_cdc_init();
+    delay_ms(50);
+    usb_cdc_reenumerate();   /* force host to re-read descriptors */
     watchdog_init();
 
     uint32_t last_feed = timing_us();

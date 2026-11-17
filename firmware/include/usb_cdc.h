@@ -11,5 +11,6 @@ uint16_t usb_cdc_available(void);
 void usb_cdc_write(const uint8_t *buf, uint16_t len);   /* queue on TX EP */
 uint16_t usb_cdc_tx_pending(void);
 void usb_cdc_poll(void);
+void usb_cdc_reenumerate(void);
 
 #endif

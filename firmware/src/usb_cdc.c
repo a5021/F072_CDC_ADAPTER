@@ -3,7 +3,27 @@
 
 #define PMA_BASE      0x40006000UL
 #define BTABLE_TBL    ((volatile uint16_t *)(PMA_BASE))
+#define BTABLE_DW     ((volatile uint32_t *)(PMA_BASE))
 #define PMA(n)        ((volatile uint16_t *)(PMA_BASE + (n)))
+
+static inline void ep_set_tx(uint8_t ep, uint16_t addr, uint16_t count)
+{
+    BTABLE_DW[ep * 2u] = addr;              /* PMA word 0 needs 32-bit write */
+    BTABLE_TBL[ep * 4u + 1u] = count;
+}
+static inline void ep_set_rx(uint8_t ep, uint16_t addr, uint16_t count)
+{
+    BTABLE_TBL[ep * 4u + 2u] = addr;
+    BTABLE_TBL[ep * 4u + 3u] = count;
+}
+static inline void ep_set_tx_count(uint8_t ep, uint16_t count)
+{
+    BTABLE_TBL[ep * 4u + 1u] = count;
+}
+static inline uint16_t ep_get_rx_count(uint8_t ep)
+{
+    return BTABLE_TBL[ep * 4u + 3u];
+}
 
 #define EP0_RX_ADDR   0x40u
 #define EP0_TX_ADDR   0x80u
@@ -30,6 +50,7 @@ static volatile uint8_t rx_ring[USB_RX_BUF_SIZE];
 static volatile uint16_t rx_head, rx_tail;
 static volatile uint16_t rx_overflow;
 
+
 static uint8_t tx_buf[USB_RX_BUF_SIZE];
 static uint16_t tx_len, tx_off;
 static volatile uint8_t tx_active;
@@ -49,7 +70,7 @@ static const uint8_t dev_desc[] = {
     0x83, 0x04,                 /* idVendor 0x0483 */
     0x40, 0x57,                 /* idProduct 0x5740 */
     0x00, 0x01,                 /* bcdDevice */
-    0x00, 0x01, 0x02, 0x03,     /* strings */
+    0x00, 0x01, 0x02,           /* iManufacturer, iProduct, iSerialNumber */
     0x01                        /* bNumConfigurations */
 };
 
@@ -101,11 +122,11 @@ static void pma_read(uint16_t addr, uint8_t *dst, uint16_t len)
 }
 
 static void ep_tx_start(const uint8_t *data, uint16_t len, uint16_t addr,
-                        volatile uint16_t *count_reg)
+                        uint8_t ep)
 {
     uint16_t n = len > 64u ? 64u : len;
     pma_write(addr, data, n);
-    *count_reg = n;
+    ep_set_tx_count(ep, n);
 }
 
 static void usb_reset_init(void)
@@ -115,12 +136,12 @@ static void usb_reset_init(void)
     USB->DADDR = 0;
 
     /* Descriptor table: TX_ADDR, TX_COUNT, RX_ADDR, RX_COUNT per EP. */
-    BTABLE_TBL[0] = EP0_TX_ADDR;  BTABLE_TBL[1] = 0;
-    BTABLE_TBL[2] = EP0_RX_ADDR;  BTABLE_TBL[3] = (1u << 6);  /* 2 x 32-byte blocks */
-    BTABLE_TBL[4] = EP1_TX_ADDR;  BTABLE_TBL[5] = 0;
-    BTABLE_TBL[6] = EP1_RX_ADDR;  BTABLE_TBL[7] = (1u << 6);
-    BTABLE_TBL[8] = EP2_TX_ADDR;  BTABLE_TBL[9] = 0;
-    BTABLE_TBL[10] = 0;           BTABLE_TBL[11] = 0;
+    ep_set_tx(0, EP0_TX_ADDR, 0);
+    ep_set_rx(0, EP0_RX_ADDR, 1u << 6);   /* 2 x 32-byte blocks */
+    ep_set_tx(1, EP1_TX_ADDR, 0);
+    ep_set_rx(1, EP1_RX_ADDR, 1u << 6);
+    ep_set_tx(2, EP2_TX_ADDR, 0);
+    ep_set_rx(2, 0, 0);
 
     USB->EP0R = EP_TYPE_CONTROL | EP_TX_NAK | EP_RX_VALID;
     USB->EP1R = EP_TYPE_BULK | 0x01u | EP_TX_NAK | EP_RX_VALID;
@@ -152,8 +173,7 @@ static void send_ctrl(const uint8_t *data, uint16_t len)
     ctrl_data_len = len;
     ctrl_data_off = 0;
     uint16_t n = len < 64u ? len : 64u;
-    ep_tx_start(data, n, EP0_TX_ADDR, &BTABLE_TBL[1]);
-    BTABLE_TBL[0] = EP0_TX_ADDR;
+    ep_tx_start(data, n, EP0_TX_ADDR, 0);
     USB->EP0R = (USB->EP0R & EP_MASK & ~(EP_CTR_RX | EP_CTR_TX)) | EP_TX_VALID | EP_RX_VALID;
 }
 
@@ -208,8 +228,7 @@ static void handle_setup(void)
         switch (req) {
         case 0x20:  /* SET_LINE_CODING */
             ctrl_out = 1;
-            BTABLE_TBL[2] = EP0_RX_ADDR;
-            BTABLE_TBL[3] = (1u << 6);
+            ep_set_rx(0, EP0_RX_ADDR, 1u << 6);
             USB->EP0R = (USB->EP0R & EP_MASK & ~(EP_CTR_RX | EP_CTR_TX)) | EP_RX_VALID;
             return;
         case 0x21:  /* GET_LINE_CODING */
@@ -238,11 +257,11 @@ static void handle_tx(volatile uint16_t *epr, uint8_t ep)
         if (ctrl_data_off < ctrl_data_len) {
             uint16_t n = ctrl_data_len - ctrl_data_off;
             if (n > 64u) n = 64u;
-            ep_tx_start(ctrl_data + ctrl_data_off, n, EP0_TX_ADDR, &BTABLE_TBL[1]);
-            *epr = (*epr & EP_MASK & ~EP_CTR_TX) | EP_TX_VALID;
+            ep_tx_start(ctrl_data + ctrl_data_off, n, EP0_TX_ADDR, 0);
+            *epr = (*epr & EP_MASK & ~EP_CTR_TX) | EP_TX_VALID | EP_RX_VALID;
         } else {
-            BTABLE_TBL[1] = 0;
-            *epr = (*epr & EP_MASK & ~EP_CTR_TX) | EP_TX_NAK;
+            ep_set_tx_count(0, 0);
+            *epr = (*epr & EP_MASK & ~EP_CTR_TX) | EP_TX_NAK | EP_RX_VALID;
         }
         return;
     }
@@ -250,11 +269,11 @@ static void handle_tx(volatile uint16_t *epr, uint8_t ep)
         if (tx_off >= tx_len) { tx_active = 0; return; }
         uint16_t n = tx_len - tx_off;
         if (n > 64u) n = 64u;
-        ep_tx_start(tx_buf + tx_off, n, EP1_TX_ADDR, &BTABLE_TBL[5]);
+        ep_tx_start(tx_buf + tx_off, n, EP1_TX_ADDR, 1);
         tx_off = (uint16_t)(tx_off + n);
         if (tx_off >= tx_len) {
             if (n == 64u) {
-                BTABLE_TBL[5] = 0;
+                ep_set_tx_count(1, 0);
                 tx_off++;   /* marker: one extra empty transfer */
             } else {
                 tx_active = 0;
@@ -268,7 +287,7 @@ static void handle_tx(volatile uint16_t *epr, uint8_t ep)
 
 static void handle_rx(volatile uint16_t *epr, uint8_t ep)
 {
-    uint16_t count = (BTABLE_TBL[ep == 0 ? 3 : 7] & 0x3FFu);
+    uint16_t count = (uint16_t)(ep_get_rx_count(ep == 0 ? 0 : 1) & 0x3FFu);
     *epr = (*epr & EP_MASK) & ~EP_CTR_RX;
 
     if (ep == 0) {
@@ -297,8 +316,7 @@ static void handle_rx(volatile uint16_t *epr, uint8_t ep)
         } else {
             rx_overflow++;
         }
-        BTABLE_TBL[6] = EP1_RX_ADDR;
-        BTABLE_TBL[7] = (1u << 6);
+        ep_set_rx(1, EP1_RX_ADDR, 1u << 6);
         USB->EP1R = (USB->EP1R & EP_MASK & ~EP_CTR_RX) | EP_RX_VALID | EP_TX_NAK;
     }
 }
@@ -321,6 +339,14 @@ void USB_LP_CAN1_RX0_IRQHandler(void)
         if (e & EP_CTR_RX) handle_rx(epr, ep);
         USB->ISTR = (uint16_t)~USB_ISTR_CTR;
     }
+}
+
+void usb_cdc_reenumerate(void)
+{
+    USB->CNTR |= USB_CNTR_FRES;
+    for (volatile uint32_t i = 0; i < 200000u; i++) { }
+    USB->CNTR &= (uint16_t)~USB_CNTR_FRES;
+    usb_reset_init();
 }
 
 uint16_t usb_cdc_available(void)
@@ -347,7 +373,7 @@ void usb_cdc_write(const uint8_t *buf, uint16_t len)
     tx_off = 0;
 
     uint16_t n = len < 64u ? len : 64u;
-    ep_tx_start(buf, n, EP1_TX_ADDR, &BTABLE_TBL[5]);
+    ep_tx_start(buf, n, EP1_TX_ADDR, 1);
     tx_off = n;
     tx_active = 1;
     USB->EP1R = (USB->EP1R & EP_MASK & ~EP_CTR_TX) | EP_TX_VALID;
