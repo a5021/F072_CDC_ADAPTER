@@ -4,8 +4,10 @@
 void timing_init(void)
 {
     RCC.APB1ENR |= RCC_APB1ENR_TIM2EN;
-    TIM2.PSC = 48u - 1u;               /* TIM2 clock = 72 MHz (APB1 x2) */
-    TIM2.ARR = 0xFFFFFFFFu;
+    /* APB1 = 36 MHz, timer clock = x2 = 72 MHz; PSC 71 gives 1 MHz counts.
+     * TIM2 is 16-bit, so the counter wraps every ~65.5 ms. */
+    TIM2.PSC = 72u - 1u;
+    TIM2.ARR = 0xFFFFu;
     TIM2.EGR = TIM_EGR_UG;
     TIM2.SR  = 0;
     TIM2.CR1 = TIM_CR1_CEN;

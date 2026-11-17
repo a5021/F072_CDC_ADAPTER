@@ -14,6 +14,8 @@
 
 static uint8_t frame[FRAME_MAX];
 static uint16_t frame_len;
+static uint8_t frame_byte;      /* byte currently being consumed by the parser */
+static uint8_t resp[PAYLOAD_MAX];
 static uint8_t expected_seq;
 static uint16_t turnaround_us = 15u;
 
@@ -192,16 +194,15 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
 
 void protocol_poll(void)
 {
-    static uint8_t byte;
     while (usb_cdc_available()) {
-        if (usb_cdc_read(&byte, 1) == 0u) break;
+        if (usb_cdc_read(&frame_byte, 1) == 0u) break;
 
         if (frame_len == 0u) {
-            if (byte != FRAME_SOF) continue;
-            frame[frame_len++] = byte;
+            if (frame_byte != FRAME_SOF) continue;
+            frame[frame_len++] = frame_byte;
             continue;
         }
-        frame[frame_len++] = byte;
+        frame[frame_len++] = frame_byte;
 
         if (frame_len >= 5u) {
             uint16_t len = (uint16_t)(frame[3] | ((uint16_t)frame[4] << 8));
@@ -218,7 +219,6 @@ void protocol_poll(void)
             if (crc != calc || seq != expected_seq) continue;
             expected_seq = (uint8_t)(seq + 1u);
 
-            static uint8_t resp[PAYLOAD_MAX];
             uint16_t resp_len = 0;
             uint8_t status = dispatch(cmd, frame + 5, len, resp, &resp_len);
             send_frame(seq, status, resp, resp_len);

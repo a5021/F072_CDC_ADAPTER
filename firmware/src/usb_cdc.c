@@ -1,49 +1,97 @@
+/*
+ * CDC data plumbing: byte ring buffer on the RX side, packet-framed stream
+ * on the TX side, plus the USB event pump.
+ *
+ * The USB interrupt handler copies each received bulk-OUT packet into the
+ * RX ring; the main loop drains it via usb_cdc_read(). Outgoing bytes are
+ * queued in a TX buffer and handed to the USB stack 64 bytes at a time by
+ * usb_cdc_poll(); a zero-length packet is appended after any multiple of
+ * 64 bytes so the host sees the message boundary.
+ */
 #include "usb_cdc.h"
 #include "stm32f103_md.h"
 #include "usb.h"
 
-static uint8_t rr[1024];
-static uint16_t rh, rt_;
-static uint8_t tb[1024];
-static uint16_t tl, to;
-static uint8_t tz;
+#define RING_SIZE  1024u // power of two, index masked with RING_SIZE-1
+#define RING_MASK  (RING_SIZE - 1u)
+#define TX_MAX     1024u
+#define EP_SIZE    64u    // bulk endpoint packet size
 
-void usb_cdc_init(void)
-{
-    rh = rt_ = 0; tl = to = 0; tz = 0;
-    /* force re-enumeration: pull D+ low then release */
-    GPIOA.CRH = (GPIOA.CRH & ~0xFu) | 0x2u;
+static uint8_t  rx_ring[RING_SIZE];
+static volatile uint16_t rx_head, rx_tail;
+
+static uint8_t  tx_buf[TX_MAX];
+static uint16_t tx_len, tx_pos; // queued bytes / bytes already handed to usb_send
+static uint8_t  tx_zlp;         // zero-length packet still to be sent
+
+void usb_cdc_init(void) {
+    rx_head = rx_tail = 0;
+    tx_len = tx_pos = 0;
+    tx_zlp = 0;
+
+    RCC.APB1ENR |= RCC_APB1ENR_USBEN;
+
+    // Force a fresh enumeration: drive D+ (PA12) low for ~100 ms, then
+    // release it back to the peripheral. Without this Windows keeps the
+    // COM port of a previously flashed image after a reflash.
+    GPIOA.CRH = (GPIOA.CRH & ~0xFu) | 0x2u; // PA12: output 2 MHz
     GPIOA.BRR = (1u << 12);
-    for (volatile uint32_t i=0;i<3000000u;i++) {}
-    GPIOA.CRH = (GPIOA.CRH & ~0xFu) | 0x4u;
+    for (volatile uint32_t i = 0; i < 3000000u; ++i) {}
+    GPIOA.CRH = (GPIOA.CRH & ~0xFu) | 0x4u; // PA12: back to the USB peripheral
+
     usb_init();
 }
-uint16_t usb_cdc_available(void) { return (uint16_t)((rh - rt_) & 1023u); }
-uint16_t usb_cdc_read(uint8_t *b, uint16_t m)
-{
-    uint16_t k = 0;
-    while (k < m && rh != rt_) { b[k++] = rr[rt_]; rt_ = (uint16_t)((rt_ + 1u) & 1023u); }
-    return k;
+
+uint16_t usb_cdc_available(void) { return (uint16_t)((rx_head - rx_tail) & RING_MASK); }
+
+uint16_t usb_cdc_read(uint8_t *buf, uint16_t max_len) {
+    uint16_t n = 0;
+    while (n < max_len && rx_head != rx_tail) {
+        buf[n++] = rx_ring[rx_tail];
+        rx_tail  = (uint16_t)((rx_tail + 1u) & RING_MASK);
+    }
+    return n;
 }
-void usb_cdc_write(const uint8_t *b, uint16_t n)
-{
-    if (to < tl) return;
-    if (n > 1024) n = 1024;
-    for (uint16_t i = 0; i < n; i++) tb[i] = b[i];
-    tl = n; to = 0; tz = (n && (n & 63u) == 0) ? 1u : 0u;
+
+void usb_cdc_write(const uint8_t *buf, uint16_t len) {
+    if (tx_pos < tx_len) return; // previous message still being transmitted
+    if (len > TX_MAX) len = TX_MAX;
+
+    for (uint16_t i = 0; i < len; ++i) tx_buf[i] = buf[i];
+    tx_len = len;
+    tx_pos = 0;
+    tx_zlp = (len && (len & (EP_SIZE - 1u)) == 0) ? 1u : 0u;
+
     usb_cdc_poll();
 }
-uint16_t usb_cdc_tx_pending(void) { return (uint16_t)(tl - to + tz); }
-void usb_cdc_poll(void)
-{
-    if (to >= tl) { if (!tz || !tl) return; if (usb_send(0,0)==0) return; tz=0; return; }
-    uint16_t n = tl - to; if (n > 64) n = 64;
-    to = (uint16_t)(to + usb_send(tb + to, n));
+
+uint16_t usb_cdc_tx_pending(void) { return (uint16_t)(tx_len - tx_pos + tx_zlp); }
+
+void usb_cdc_poll(void) {
+    if (tx_pos >= tx_len) {
+        // whole message sent; emit the zero-length terminator if needed
+        if (!tx_zlp || !tx_len) return;
+        if (usb_send(0, 0) == 0) return;
+        tx_zlp = 0;
+        return;
+    }
+
+    uint16_t n = (uint16_t)(tx_len - tx_pos);
+    if (n > EP_SIZE) n = EP_SIZE;
+    tx_pos = (uint16_t)(tx_pos + usb_send(tx_buf + tx_pos, n));
 }
-void USB_LP_CAN1_RX0_IRQ_Handler(void)
-{
-    uint8_t tmp[64];
-    size_t n = usb_recv(tmp, sizeof tmp);
-    for (size_t i=0;i<n;i++){ uint16_t nx=(uint16_t)((rh+1u)&1023u); if(nx==rt_)break; rr[rh]=tmp[i]; rh=nx; }
+
+// USB interrupt: drive the stack and copy received bytes into the RX ring.
+void USB_LP_CAN1_RX0_IRQ_Handler(void) {
+    uint8_t packet[EP_SIZE];
+    size_t  n = usb_recv(packet, sizeof packet);
+
+    for (size_t i = 0; i < n; ++i) {
+        uint16_t next = (uint16_t)((rx_head + 1u) & RING_MASK);
+        if (next == rx_tail) break; // ring full, drop the rest of the packet
+        rx_ring[rx_head] = packet[i];
+        rx_head = next;
+    }
 }
+
 void usb_cdc_reenumerate(void) { usb_init(); }
