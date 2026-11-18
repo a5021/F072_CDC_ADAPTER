@@ -17,10 +17,10 @@ bash build_firmware.sh
 Flash:
 
 ```
-st-flash --serial <SERIAL> --connect-under-reset --reset write build/f072_adapter.bin 0x08000000
+st-flash --serial <SERIAL> --connect-under-reset --reset write build/f103_adapter.bin 0x08000000
 ```
 
-Host driver `tools/f072_adapter.py` (pyserial). Tests:
+Host driver `tools/f103_adapter.py` (pyserial). Tests:
 
 ```
 python -m unittest discover -s tests -v

@@ -1,4 +1,4 @@
-"""Host driver for the F072_CDC_ADAPTER USB-to-I2C adapter.
+"""Host driver for the F103_CDC_I2C USB-to-I2C adapter.
 
 Drop-in replacement for owbridge_demo.Ch341I2C at the transport level.
 No third-party dependency except pyserial.
@@ -140,11 +140,11 @@ def parse_script_result(blob):
     return out
 
 
-class F072Error(RuntimeError):
+class F103Error(RuntimeError):
     pass
 
 
-class F072I2C:
+class F103I2C:
     """Adapter transport. `address` is the 7-bit I2C slave address."""
 
     def __init__(self, port=None, address=0x30, speed_khz=100, turnaround_us=15,
@@ -189,7 +189,7 @@ class F072I2C:
         deadline = time.monotonic() + self.timeout
         while len(out) < n:
             if time.monotonic() > deadline:
-                raise F072Error("serial timeout")
+                raise F103Error("serial timeout")
             chunk = self.ser.read(n - len(out))
             if chunk:
                 out += chunk
@@ -199,7 +199,7 @@ class F072I2C:
 
     def _exchange(self, cmd, payload=b""):
         if not self._opened:
-            raise F072Error("adapter not open")
+            raise F103Error("adapter not open")
         frame = build_frame(self.seq, cmd, payload)
         for attempt in range(self.retries):
             self.ser.write(frame)
@@ -213,24 +213,24 @@ class F072I2C:
                     raise ValueError("seq mismatch")
                 self.seq = (self.seq + 1) & 0xFF
                 if status:
-                    raise F072Error("%s (0x%02X)" % (ERRORS.get(status, "ERROR"), status))
+                    raise F103Error("%s (0x%02X)" % (ERRORS.get(status, "ERROR"), status))
                 if self.trace:
                     self.trace(payload, data, cmd)
                 return data
-            except F072Error:
+            except F103Error:
                 raise
             except (ValueError, serial.SerialException) as exc:
                 if attempt == self.retries - 1:
-                    raise F072Error("no valid response: %s" % exc)
+                    raise F103Error("no valid response: %s" % exc)
                 self.ser.reset_input_buffer()
                 time.sleep(0.005)
-        raise F072Error("unreachable")
+        raise F103Error("unreachable")
 
     # -- Ch341I2C-compatible surface -------------------------------------
     def _stream(self, wbytes, rlen):
         wbytes = bytes(wbytes)
         if not wbytes:
-            raise F072Error("missing I2C address byte")
+            raise F103Error("missing I2C address byte")
         addr = wbytes[0] >> 1
         data = wbytes[1:]
 
@@ -238,7 +238,7 @@ class F072I2C:
             for attempt in range(self.retries):
                 try:
                     return self._exchange(cmd, payload)
-                except F072Error as exc:
+                except F103Error as exc:
                     retryable = any(s in str(exc) for s in ("(0x01)", "(0x02)", "(0x03)", "(0x05)"))
                     if not retryable or attempt == self.retries - 1:
                         raise
@@ -257,7 +257,7 @@ class F072I2C:
         if not data:  # read-only: no dummy write/STOP before the read phase
             try:
                 return send(CMD_READ, bytes([addr]) + struct.pack("<H", rlen))[:rlen]
-            except F072Error as exc:
+            except F103Error as exc:
                 # CH341A semantics: a NACKed address returns all-FF, not an
                 # exception (protocol_test relies on that for foreign reads).
                 if "NACK_ADDR" in str(exc):

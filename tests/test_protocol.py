@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
-from f072_adapter import (build_frame, build_script, crc16_ccitt, parse_frame,
+from f103_adapter import (build_frame, build_script, crc16_ccitt, parse_frame,
                           parse_script_result)
 
 

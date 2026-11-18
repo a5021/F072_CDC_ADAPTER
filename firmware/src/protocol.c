@@ -60,7 +60,7 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
     switch (cmd) {
     case CMD_PING:
         put16(resp, FW_VERSION); put32(resp + 2, CAPS);
-        memcpy(resp + 6, "F072I2C", 7); n = 13;
+        memcpy(resp + 6, "F103I2C", 7); n = 13;
         break;
 
     case CMD_SET_SPEED:

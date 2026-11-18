@@ -22,7 +22,7 @@ Multi-byte fields are little-endian.
 
 | Code | Name | Request payload | Response payload |
 |---|---|---|---|
-| 0x01 | PING | — | version u16, caps u32, "F072I2C" |
+| 0x01 | PING | — | version u16, caps u32, "F103I2C" |
 | 0x02 | SET_SPEED | kHz u16 | actual kHz u16 |
 | 0x03 | SET_TURNAROUND | us u16 (2..250) | actual us u16 |
 | 0x04 | SET_STRETCH_TO | ms u16 | actual ms u16 |

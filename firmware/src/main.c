@@ -1,5 +1,5 @@
 /*
- * F072_CDC_ADAPTER: USB CDC to I2C adapter firmware for STM32F103CB (Blue Pill).
+ * F103_CDC_I2C: USB CDC to I2C adapter firmware for STM32F103CB (Blue Pill).
  *
  * Startup (clock, vector table, .data/.bss init) is done in vendor/boot.c.
  * This file configures the peripherals the adapter uses and runs the main
