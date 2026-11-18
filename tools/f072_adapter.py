@@ -233,15 +233,29 @@ class F072I2C:
             raise F072Error("missing I2C address byte")
         addr = wbytes[0] >> 1
         data = wbytes[1:]
+
+        def send(cmd, payload):
+            for attempt in range(self.retries):
+                try:
+                    return self._exchange(cmd, payload)
+                except F072Error as exc:
+                    retryable = any(s in str(exc) for s in ("(0x01)", "(0x02)", "(0x03)", "(0x05)"))
+                    if not retryable or attempt == self.retries - 1:
+                        raise
+                    self._exchange(0x41)  # CMD_BUS_CLEAR
+                    time.sleep(0.005)
+
         if rlen == 0:
-            self._exchange(CMD_WRITE, bytes([addr]) + data)
+            send(CMD_WRITE, bytes([addr]) + data)
             return b""
+        if not data:  # read-only: no dummy write/STOP before the read phase
+            return send(CMD_READ, bytes([addr]) + struct.pack("<H", rlen))[:rlen]
         if self.repeated_start:
             payload = bytes([addr, len(data)]) + data + struct.pack("<H", rlen)
-            return self._exchange(CMD_REP_START, payload)[:rlen]
+            return send(CMD_REP_START, payload)[:rlen]
         payload = (bytes([addr, len(data)]) + data +
                    struct.pack("<HH", rlen, self.turnaround_us))
-        return self._exchange(CMD_WRITE_READ, payload)[:rlen]
+        return send(CMD_WRITE_READ, payload)[:rlen]
 
     def stream(self, wbytes, rlen=0):
         return self._stream(wbytes, rlen)

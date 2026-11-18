@@ -26,11 +26,13 @@ static uint8_t check_error(uint32_t sr1, unsigned transferred)
 static void clear_errors(void) { I2C1.SR1 &= ~I2C_ERROR_MASK; }
 
 static void i2c_stop(void);
+static void i2c_recover(void);
 
 static uint8_t abort_xfer(uint8_t st)
 {
     I2C1.CR1 &= ~I2C_CR1_START; // a pending START would block STOP
     i2c_stop();
+    i2c_recover();
     return st;
 }
 
@@ -75,8 +77,13 @@ static void i2c_stop(void)
 {
     I2C1.CR1 |= I2C_CR1_STOP;
     uint32_t start = timing_us();
-    while ((I2C1.SR2 & I2C_SR2_BUSY) != 0u) {
-        if ((uint32_t)(timing_us() - start) > 20000u) break;
+    /* Wait for the hardware to clear STOP as well as BUSY. If STOP stays
+     * latched the next START is ignored (observed as ARB_LOST/TIMEOUT). */
+    while (((I2C1.CR1 & I2C_CR1_STOP) != 0u || (I2C1.SR2 & I2C_SR2_BUSY) != 0u) &&
+           (uint32_t)(timing_us() - start) < 20000u) {}
+    if ((I2C1.CR1 & I2C_CR1_STOP) != 0u) {
+        I2C1.CR1 = 0;                         // release the stuck state machine
+        I2C1.CR1 = I2C_CR1_PE | I2C_CR1_ACK;
     }
 }
 
@@ -117,12 +124,25 @@ void i2c_set_speed_khz(uint16_t khz, uint16_t *actual)
 
 uint16_t i2c_get_speed_khz(void) { return current_khz; }
 
+/* The F1 I2C state machine can wedge after an aborted transfer (BUSY set,
+ * SCL held low, SB pending). A full SWRST cycle is the only reliable way out. */
+static void i2c_recover(void)
+{
+    I2C1.CR1 = I2C_CR1_SWRST;
+    I2C1.CR1 = 0;
+    I2C1.CR2 = PCLK1_MHZ;
+    I2C1.OAR1 = 0;
+    i2c_set_speed_khz(current_khz, 0);
+    I2C1.CR1 |= I2C_CR1_PE | I2C_CR1_ACK;
+    I2C1.SR1 = 0;
+}
+
 void i2c_set_stretch_timeout_ms(uint16_t ms) { stretch_timeout_ms = ms ? ms : 1u; }
 uint16_t i2c_get_stretch_timeout_ms(void) { return stretch_timeout_ms; }
 
 uint8_t i2c_write(uint8_t addr, const uint8_t *data, uint16_t len, uint8_t flags)
 {
-    if ((I2C1.SR2 & I2C_SR2_BUSY) != 0u) return ST_BUS_ERROR;
+    if ((I2C1.SR2 & I2C_SR2_BUSY) != 0u) i2c_recover();
     uint8_t st = i2c_start(addr, 0, 0);
     if (st != ST_OK) return abort_xfer(st);
 
@@ -140,8 +160,7 @@ uint8_t i2c_write(uint8_t addr, const uint8_t *data, uint16_t len, uint8_t flags
 
 uint8_t i2c_read(uint8_t addr, uint8_t *data, uint16_t len, uint8_t flags)
 {
-    if ((I2C1.SR2 & I2C_SR2_BUSY) != 0u && !(flags & I2C_FLAG_RESTART))
-        return ST_BUS_ERROR;
+    if ((I2C1.SR2 & I2C_SR2_BUSY) != 0u && !(flags & I2C_FLAG_RESTART)) i2c_recover();
 
     I2C1.CR1 |= I2C_CR1_ACK;
     uint8_t st = i2c_start(addr, 1, 0);
