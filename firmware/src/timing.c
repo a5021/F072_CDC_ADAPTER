@@ -1,19 +1,40 @@
 #include "timing.h"
 #include "stm32f103_md.h"
 
+static volatile uint32_t us_hi; // TIM2 update count, extended by the IRQ
+
+void TIM2_IRQ_Handler(void)
+{
+    if (TIM2.SR & TIM_SR_UIF) {
+        TIM2.SR = 0;
+        ++us_hi;
+    }
+}
+
 void timing_init(void)
 {
     RCC.APB1ENR |= RCC_APB1ENR_TIM2EN;
     /* APB1 = 36 MHz, timer clock = x2 = 72 MHz; PSC 71 gives 1 MHz counts.
-     * TIM2 is 16-bit, so the counter wraps every ~65.5 ms. */
+     * TIM2 is 16-bit, so the counter wraps every ~65.5 ms; the update IRQ
+     * extends the count to 32 bits. */
     TIM2.PSC = 72u - 1u;
     TIM2.ARR = 0xFFFFu;
     TIM2.EGR = TIM_EGR_UG;
     TIM2.SR  = 0;
+    TIM2.DIER = TIM_DIER_UIE;
+    NVIC_EnableIRQ(TIM2_IRQn);
     TIM2.CR1 = TIM_CR1_CEN;
 }
 
-uint32_t timing_us(void) { return TIM2.CNT; }
+uint32_t timing_us(void)
+{
+    /* Latch-free read: if an update is pending it belongs to the latched
+     * high word's next increment. */
+    uint32_t hi = us_hi;
+    uint16_t lo = TIM2.CNT;
+    if (TIM2.SR & TIM_SR_UIF) ++hi;
+    return (hi << 16) | lo;
+}
 
 void delay_us(uint16_t us)
 {

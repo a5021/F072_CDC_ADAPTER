@@ -67,7 +67,7 @@ void capture_mark(uint8_t label)
     push_event(timing_us(), (uint8_t)(CAP_FLAG_MARK | (label & 0x07u)));
 }
 
-void EXTI9_5_IRQHandler(void)
+void EXTI9_5_IRQ_Handler(void)
 {
     uint32_t pr = EXTI.PR & ((1u << 6u) | (1u << 7u));
     if (!pr) return;

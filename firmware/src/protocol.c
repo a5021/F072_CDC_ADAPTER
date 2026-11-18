@@ -216,7 +216,9 @@ void protocol_poll(void)
             uint8_t cmd = frame[2];
             frame_len = 0;
 
-            if (crc != calc || seq != expected_seq) continue;
+            if (crc != calc) continue;          // corrupt frame: drop silently
+            // A CRC-valid frame with an unexpected seq means the host
+            // restarted (new session starts at seq 0): resync and serve it.
             expected_seq = (uint8_t)(seq + 1u);
 
             uint16_t resp_len = 0;

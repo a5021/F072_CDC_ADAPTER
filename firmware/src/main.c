@@ -83,15 +83,11 @@ int main(void) {
     }
 
     RCC.APB2ENR |= RCC_APB2ENR_USART1EN | RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPBEN | RCC_APB2ENR_IOPCEN;
-    RCC.APB1ENR |= RCC_APB1ENR_USBEN;
     delay(10); // let the clocks and peripherals start up
 
     for (const struct gpio_config_t* p = pin_cfgs; p->pins; ++p) {
         gpioConfig(p->pins, p->mode);
     }
-    gpioLock(PAAll);
-    gpioLock(PBAll);
-    gpioLock(PCAll);
 
     led0_off();
 
@@ -109,6 +105,13 @@ int main(void) {
     i2c_init();
     capture_init();
     usb_cdc_init();
+
+    // Freeze the pin configuration only after every init that touches GPIO
+    // (board_init: I2C/TRIG/nRST/LED, usb_cdc_init: the PA12 pulse). LCKR
+    // silently ignores later CR writes, so locking earlier kills those pins.
+    gpioLock(PAAll & ~(1u << 12)); // keep PA12 (USB D+) free for the enumeration pulse
+    gpioLock(PBAll & ~((1u << 6u) | (1u << 7u))); // keep I2C pins free for i2c_bus_clear()
+    gpioLock(PCAll);
 
     NVIC_EnableIRQ(USB_LP_CAN1_RX0_IRQn);
 

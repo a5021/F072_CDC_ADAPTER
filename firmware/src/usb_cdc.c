@@ -29,15 +29,16 @@ void usb_cdc_init(void) {
     tx_len = tx_pos = 0;
     tx_zlp = 0;
 
-    RCC.APB1ENR |= RCC_APB1ENR_USBEN;
-
-    // Force a fresh enumeration: drive D+ (PA12) low for ~100 ms, then
-    // release it back to the peripheral. Without this Windows keeps the
-    // COM port of a previously flashed image after a reflash.
-    GPIOA.CRH = (GPIOA.CRH & ~0xFu) | 0x2u; // PA12: output 2 MHz
+    // Force a fresh enumeration: drive D+ (PA12) low for ~100 ms BEFORE the
+    // USB peripheral is clocked. Once the USB cell is enabled it owns PA12
+    // (embedded 1.5 k pull-up), and the GPIO can no longer pull D+ low -
+    // the host then never sees a disconnect and keeps a stale COM port.
+    GPIOA.CRH = (GPIOA.CRH & ~(0xFu << 16)) | (0x2u << 16); // PA12: output 2 MHz
     GPIOA.BRR = (1u << 12);
     for (volatile uint32_t i = 0; i < 3000000u; ++i) {}
-    GPIOA.CRH = (GPIOA.CRH & ~0xFu) | 0x4u; // PA12: back to the USB peripheral
+
+    RCC.APB1ENR |= RCC_APB1ENR_USBEN;
+    GPIOA.CRH = (GPIOA.CRH & ~(0xFu << 16)) | (0x4u << 16); // PA12: back to the USB peripheral
 
     usb_init();
 }

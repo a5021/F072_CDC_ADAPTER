@@ -4,7 +4,7 @@
 #include "hw_defs.h"
 #include "stm32f103_md.h"
 
-#define PCLK1_MHZ        24u
+#define PCLK1_MHZ        36u // HCLK 72 MHz / PPRE1_DIV2
 #define I2C_ERROR_MASK   (I2C_SR1_BERR | I2C_SR1_ARLO | I2C_SR1_AF)
 
 static uint16_t current_khz = 100u;
@@ -21,6 +21,19 @@ static uint8_t check_error(uint32_t sr1, unsigned transferred)
     return ST_OK;
 }
 
+/* F1 SR1 error bits are rc_w0: they must be cleared by writing 0, or every
+ * later wait sees the stale flag and fails instantly. */
+static void clear_errors(void) { I2C1.SR1 &= ~I2C_ERROR_MASK; }
+
+static void i2c_stop(void);
+
+static uint8_t abort_xfer(uint8_t st)
+{
+    I2C1.CR1 &= ~I2C_CR1_START; // a pending START would block STOP
+    i2c_stop();
+    return st;
+}
+
 static uint8_t wait_flag(uint32_t flag, unsigned transferred, uint32_t *sr1_out)
 {
     uint32_t start = timing_us();
@@ -29,7 +42,9 @@ static uint8_t wait_flag(uint32_t flag, unsigned transferred, uint32_t *sr1_out)
         uint32_t sr1 = I2C1.SR1;
         if (sr1 & I2C_ERROR_MASK) {
             if (sr1_out) *sr1_out = sr1;
-            return check_error(sr1, transferred);
+            uint8_t st = check_error(sr1, transferred);
+            clear_errors();
+            return st;
         }
         if (sr1 & flag) {
             if (sr1_out) *sr1_out = sr1;
@@ -45,12 +60,13 @@ static uint8_t wait_flag(uint32_t flag, unsigned transferred, uint32_t *sr1_out)
 static uint8_t i2c_start(uint8_t addr, uint8_t read, unsigned transferred)
 {
     uint32_t dummy;
+    I2C1.CR1 |= I2C_CR1_START; // generate START, then wait for SB
     uint8_t st = wait_flag(I2C_SR1_SB, transferred, &dummy);
     if (st != ST_OK) return st;
     I2C1.DR = (uint8_t)((addr << 1) | (read ? 1u : 0u));
     st = wait_flag(I2C_SR1_ADDR, transferred, &dummy);
     if (st != ST_OK) return st;
-    (void)I2C1.SR1;
+    (void)I2C1.SR1; // clear ADDR by reading SR1 then SR2
     (void)I2C1.SR2;
     return ST_OK;
 }
@@ -108,15 +124,15 @@ uint8_t i2c_write(uint8_t addr, const uint8_t *data, uint16_t len, uint8_t flags
 {
     if ((I2C1.SR2 & I2C_SR2_BUSY) != 0u) return ST_BUS_ERROR;
     uint8_t st = i2c_start(addr, 0, 0);
-    if (st != ST_OK) { if (I2C1.SR2 & I2C_SR2_BUSY) i2c_stop(); return st; }
+    if (st != ST_OK) return abort_xfer(st);
 
     for (uint16_t i = 0; i < len; i++) {
         st = wait_flag(I2C_SR1_TXE, i + 1u, 0);
-        if (st != ST_OK) { i2c_stop(); return st; }
+        if (st != ST_OK) return abort_xfer(st);
         I2C1.DR = data[i];
     }
     st = wait_flag(I2C_SR1_BTF, len, 0);
-    if (st != ST_OK) { i2c_stop(); return st; }
+    if (st != ST_OK) return abort_xfer(st);
     if (flags & I2C_FLAG_STOP) i2c_stop();
     stats_inc(STAT_TXN);
     return ST_OK;
@@ -129,7 +145,7 @@ uint8_t i2c_read(uint8_t addr, uint8_t *data, uint16_t len, uint8_t flags)
 
     I2C1.CR1 |= I2C_CR1_ACK;
     uint8_t st = i2c_start(addr, 1, 0);
-    if (st != ST_OK) { if (I2C1.SR2 & I2C_SR2_BUSY) i2c_stop(); return st; }
+    if (st != ST_OK) return abort_xfer(st);
 
     for (uint16_t i = 0; i < len; i++) {
         if (i + 1u == len) {
@@ -137,7 +153,7 @@ uint8_t i2c_read(uint8_t addr, uint8_t *data, uint16_t len, uint8_t flags)
             if (flags & I2C_FLAG_STOP) I2C1.CR1 |= I2C_CR1_STOP;
         }
         st = wait_flag(I2C_SR1_RXNE, i, 0);
-        if (st != ST_OK) { i2c_stop(); return st; }
+        if (st != ST_OK) return abort_xfer(st);
         data[i] = (uint8_t)I2C1.DR;
     }
     if (!(flags & I2C_FLAG_STOP)) i2c_stop();
