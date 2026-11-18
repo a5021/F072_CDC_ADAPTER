@@ -246,10 +246,23 @@ class F072I2C:
                     time.sleep(0.005)
 
         if rlen == 0:
+            if not data:
+                # CH341A "read length 0" is an address-only probe: clock one
+                # byte and drop it (CMD_WRITE would need at least one data
+                # byte on the firmware side).
+                send(CMD_READ, bytes([addr]) + struct.pack("<H", 1))
+                return b""
             send(CMD_WRITE, bytes([addr]) + data)
             return b""
         if not data:  # read-only: no dummy write/STOP before the read phase
-            return send(CMD_READ, bytes([addr]) + struct.pack("<H", rlen))[:rlen]
+            try:
+                return send(CMD_READ, bytes([addr]) + struct.pack("<H", rlen))[:rlen]
+            except F072Error as exc:
+                # CH341A semantics: a NACKed address returns all-FF, not an
+                # exception (protocol_test relies on that for foreign reads).
+                if "NACK_ADDR" in str(exc):
+                    return b"\xff" * rlen
+                raise
         if self.repeated_start:
             payload = bytes([addr, len(data)]) + data + struct.pack("<H", rlen)
             return send(CMD_REP_START, payload)[:rlen]
