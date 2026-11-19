@@ -253,8 +253,14 @@ class F103I2C:
                     retryable = exc.status in (0x01, 0x02, 0x03, 0x05)
                     if not retryable or attempt == self.retries - 1:
                         raise
-                    self._exchange(0x41)  # CMD_BUS_CLEAR
-                    time.sleep(0.005)
+                    # A plain NACK only means the polled slave was busy: give
+                    # it a moment and retry the same frame. A cleared/wedged
+                    # bus needs the 9-clock recovery instead.
+                    if exc.status in (0x03, 0x05):
+                        self._exchange(0x41)  # CMD_BUS_CLEAR
+                        time.sleep(0.005)
+                    else:
+                        time.sleep(0.001 + 0.001 * attempt)
 
         if rlen == 0:
             if not data:
