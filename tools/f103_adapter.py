@@ -141,7 +141,9 @@ def parse_script_result(blob):
 
 
 class F103Error(RuntimeError):
-    pass
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class F103Timeout(F103Error):
@@ -152,7 +154,7 @@ class F103I2C:
     """Adapter transport. `address` is the 7-bit I2C slave address."""
 
     def __init__(self, port=None, address=0x30, speed_khz=100, turnaround_us=15,
-                 baudrate=921600, timeout=3.0, trace=None, retries=4):
+                 baudrate=921600, timeout=3.0, trace=None, retries=6):
         self.address = address
         self.speed_khz = speed_khz
         self.turnaround_us = turnaround_us
@@ -217,7 +219,7 @@ class F103I2C:
                     raise ValueError("seq mismatch")
                 self.seq = (self.seq + 1) & 0xFF
                 if status:
-                    raise F103Error("%s (0x%02X)" % (ERRORS.get(status, "ERROR"), status))
+                    raise F103Error("%s (0x%02X)" % (ERRORS.get(status, "ERROR"), status), status)
                 if self.trace:
                     self.trace(payload, data, cmd)
                 return data
@@ -248,7 +250,7 @@ class F103I2C:
                 try:
                     return self._exchange(cmd, payload)
                 except F103Error as exc:
-                    retryable = any(s in str(exc) for s in ("(0x01)", "(0x02)", "(0x03)", "(0x05)"))
+                    retryable = exc.status in (0x01, 0x02, 0x03, 0x05)
                     if not retryable or attempt == self.retries - 1:
                         raise
                     self._exchange(0x41)  # CMD_BUS_CLEAR
@@ -263,7 +265,7 @@ class F103I2C:
                 try:
                     send(CMD_READ, bytes([addr]) + struct.pack("<H", 1))
                 except F103Error as exc:
-                    if "NACK_ADDR" not in str(exc):
+                    if exc.status != 0x01:
                         raise
                 return b""
             send(CMD_WRITE, bytes([addr]) + data)
@@ -274,7 +276,7 @@ class F103I2C:
             except F103Error as exc:
                 # CH341A semantics: a NACKed address returns all-FF, not an
                 # exception (protocol_test relies on that for foreign reads).
-                if "NACK_ADDR" in str(exc):
+                if exc.status == 0x01:
                     return b"\xff" * rlen
                 raise
         if self.repeated_start:

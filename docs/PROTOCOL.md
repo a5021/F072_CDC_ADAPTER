@@ -45,12 +45,26 @@ Multi-byte fields are little-endian.
 is zero, the value set with `SET_TURNAROUND` is used. `REP_START` uses a
 repeated START with no gap.
 
+With the polled owbridge slave the host must use `WRITE_READ` at 100 kHz:
+the slave cannot execute a queued command and clock the following address
+bits within the 5 us half-period, so a repeated START there returns a
+stale/NACKed address. `REP_START` works up to 50 kHz.
+
 Status codes: 0x00 OK, 0x01 NACK_ADDR, 0x02 NACK_DATA, 0x03 ARB_LOST,
 0x04 BUS_ERROR, 0x05 TIMEOUT, 0x06 BAD_PARAM, 0x07 BUFFER_FULL, 0x08 BAD_FRAME,
 0x09 ABORTED.
 
 Stats counters: transactions, NACK address, NACK data, ARB_LOST, BUS_ERROR,
 TIMEOUT, OVERFLOW.
+
+`STATS` with `subcmd=1` resets the counters and returns no payload.
+
+## Retry de-duplication
+
+A CRC-valid frame whose `(seq, CRC)` repeats within 500 ms is answered from
+the cached response without re-executing the command. A host that times out
+may therefore re-send the same frame safely; `WRITE`, `RESET` and
+`CONFIG_SET` are not applied twice. A new session may also start at seq 0.
 
 ## Scripts
 
@@ -73,6 +87,10 @@ record = [opcode u8][len u8][payload]
 
 `OP_REPEAT` repeats from `block_start` (a byte offset into the records area)
 to the end of the script. No nesting. Total script time is limited to 5 s.
+
+`OP_WRITE` inserts a 50 us turnaround after a successful transfer so that a
+following `OP_READ` does not clock the slave while it is still committing the
+command.
 
 `SCRIPT_GET` returns result records:
 
