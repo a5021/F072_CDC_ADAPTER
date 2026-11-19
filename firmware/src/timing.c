@@ -28,11 +28,16 @@ void timing_init(void)
 
 uint32_t timing_us(void)
 {
-    /* Latch-free read: if an update is pending it belongs to the latched
-     * high word's next increment. */
+    /* The update IRQ would otherwise be able to bump us_hi between the two
+     * reads, turning the result into a 65.5 ms jump backwards. The PRIMASK
+     * access is inline: the vendored core_cm3.c helper breaks LTO links. */
+    uint32_t primask;
+    __asm volatile("mrs %0, primask" : "=r"(primask));
+    __asm volatile("cpsid i" ::: "memory");
     uint32_t hi = us_hi;
     uint16_t lo = TIM2.CNT;
-    if (TIM2.SR & TIM_SR_UIF) ++hi;
+    if (TIM2.SR & TIM_SR_UIF) ++hi; // update pending, IRQ not serviced yet
+    if ((primask & 1u) == 0u) __asm volatile("cpsie i" ::: "memory");
     return (hi << 16) | lo;
 }
 

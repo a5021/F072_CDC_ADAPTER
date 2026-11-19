@@ -95,7 +95,7 @@ def build_script(addr, ops):
             payload = bytes(op[1])
             records.append(bytes([OP_WRITE, len(payload)]) + payload)
         elif kind == "read":
-            records.append(bytes([OP_READ, 5]) +
+            records.append(bytes([OP_READ, 4]) +
                            struct.pack("<HH", op[1], op[2]))
         elif kind == "delay":
             records.append(bytes([OP_DELAY, 2]) + struct.pack("<H", op[1]))
@@ -144,6 +144,10 @@ class F103Error(RuntimeError):
     pass
 
 
+class F103Timeout(F103Error):
+    """No complete response arrived over USB within the caller's timeout."""
+
+
 class F103I2C:
     """Adapter transport. `address` is the 7-bit I2C slave address."""
 
@@ -189,7 +193,7 @@ class F103I2C:
         deadline = time.monotonic() + self.timeout
         while len(out) < n:
             if time.monotonic() > deadline:
-                raise F103Error("serial timeout")
+                raise F103Timeout("serial timeout")
             chunk = self.ser.read(n - len(out))
             if chunk:
                 out += chunk
@@ -217,6 +221,11 @@ class F103I2C:
                 if self.trace:
                     self.trace(payload, data, cmd)
                 return data
+            except F103Timeout:
+                if attempt == self.retries - 1:
+                    raise
+                self.ser.reset_input_buffer()
+                time.sleep(0.005)
             except F103Error:
                 raise
             except (ValueError, serial.SerialException) as exc:
@@ -249,8 +258,13 @@ class F103I2C:
             if not data:
                 # CH341A "read length 0" is an address-only probe: clock one
                 # byte and drop it (CMD_WRITE would need at least one data
-                # byte on the firmware side).
-                send(CMD_READ, bytes([addr]) + struct.pack("<H", 1))
+                # byte on the firmware side). A NACK means "no device here",
+                # which is not an error for a probe.
+                try:
+                    send(CMD_READ, bytes([addr]) + struct.pack("<H", 1))
+                except F103Error as exc:
+                    if "NACK_ADDR" not in str(exc):
+                        raise
                 return b""
             send(CMD_WRITE, bytes([addr]) + data)
             return b""
@@ -264,8 +278,11 @@ class F103I2C:
                     return b"\xff" * rlen
                 raise
         if self.repeated_start:
-            payload = bytes([addr, len(data)]) + data + struct.pack("<H", rlen)
-            return send(CMD_REP_START, payload)[:rlen]
+            # The owbridge slave is polled, so it cannot execute the command
+            # and clock the following address bits at 100 kHz (a true repeated
+            # START). Use the STOP + gap form, which the same host contract
+            # treats as equivalent in practice.
+            pass
         payload = (bytes([addr, len(data)]) + data +
                    struct.pack("<HH", rlen, self.turnaround_us))
         return send(CMD_WRITE_READ, payload)[:rlen]
@@ -315,6 +332,8 @@ class F103I2C:
 
     def stats(self, reset=False):
         data = self._exchange(CMD_STATS, bytes([1 if reset else 0]))
+        if reset:
+            return {}
         vals = struct.unpack("<7I", data[:28])
         return dict(zip(STAT_NAMES, vals))
 

@@ -175,7 +175,8 @@ uint8_t i2c_read(uint8_t addr, uint8_t *data, uint16_t len, uint8_t flags)
         if (st != ST_OK) return abort_xfer(st);
         data[i] = (uint8_t)I2C1.DR;
     }
-    if (!(flags & I2C_FLAG_STOP)) i2c_stop();
+    /* STOP was already requested before the last byte; with RESTART the bus
+     * stays owned until the next i2c_start(). */
     stats_inc(STAT_TXN);
     return ST_OK;
 }

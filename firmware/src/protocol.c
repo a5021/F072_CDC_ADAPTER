@@ -16,8 +16,18 @@ static uint8_t frame[FRAME_MAX];
 static uint16_t frame_len;
 static uint8_t frame_byte;      /* byte currently being consumed by the parser */
 static uint8_t resp[PAYLOAD_MAX];
-static uint8_t expected_seq;
 static uint16_t turnaround_us = 15u;
+
+/* Retry de-duplication: a host that times out re-sends the identical frame
+ * with the same seq. Re-executing WRITE/RESET/CONFIG_SET would be wrong, so
+ * the last (seq, CRC) pair is answered from the cached response. The window
+ * keeps a new session that legitimately starts at seq 0 from being mistaken
+ * for a retry of the previous one. */
+static uint8_t last_seq;
+static uint16_t last_crc;
+static uint32_t last_us;
+static uint8_t last_status;
+static uint16_t last_resp_len;
 
 uint16_t crc16_ccitt(const uint8_t *data, uint16_t len)
 {
@@ -104,7 +114,9 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
         {
             uint8_t addr = p[0];
             uint8_t wlen = p[1];
-            if ((uint16_t)(2u + wlen + 4u) != len) return ST_BAD_PARAM;
+            /* WRITE_READ carries an extra gap u16; REP_START does not. */
+            uint16_t tail = (cmd == CMD_WRITE_READ) ? 4u : 2u;
+            if ((uint16_t)(2u + wlen + tail) != len) return ST_BAD_PARAM;
             uint16_t rlen = get16(p + 2u + wlen);
             uint16_t gap = (cmd == CMD_WRITE_READ) ? get16(p + 4u + wlen) : 0u;
             if (rlen == 0u || rlen > PAYLOAD_MAX - 8u) return ST_BAD_PARAM;
@@ -217,13 +229,26 @@ void protocol_poll(void)
             frame_len = 0;
 
             if (crc != calc) continue;          // corrupt frame: drop silently
-            // A CRC-valid frame with an unexpected seq means the host
-            // restarted (new session starts at seq 0): resync and serve it.
-            expected_seq = (uint8_t)(seq + 1u);
+
+            /* A retry from the host arrives with the same seq and CRC within
+             * a few hundred milliseconds; answer it without re-executing. */
+            uint32_t now = timing_us();
+            if (seq == last_seq && calc == last_crc &&
+                (uint32_t)(now - last_us) < 500000u) {
+                frame_len = 0;
+                send_frame(seq, last_status, resp, last_resp_len);
+                continue;
+            }
 
             uint16_t resp_len = 0;
             uint8_t status = dispatch(cmd, frame + 5, len, resp, &resp_len);
             send_frame(seq, status, resp, resp_len);
+
+            last_seq = seq;
+            last_crc = calc;
+            last_us = now;
+            last_status = status;
+            last_resp_len = resp_len;
         }
     }
 }

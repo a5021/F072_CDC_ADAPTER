@@ -75,14 +75,19 @@ uint8_t script_run(void)
         case OP_WRITE:
             if (len == 0u) return ST_BAD_PARAM;
             status = i2c_write(i2c_addr, p, len, I2C_FLAG_STOP);
+            /* The polled slave commits and prepares the response after the
+             * STOP; a following OP_READ must not clock it immediately. */
+            if (status == ST_OK) delay_us(50u);
             break;
         case OP_READ:
-            if (len != 5u) return ST_BAD_PARAM;
+            if (len != 4u) return ST_BAD_PARAM;
             {
                 uint16_t n = rd16(p);
+                uint16_t gap = rd16(p + 2u);
                 if (n == 0u || n > sizeof(rx)) return ST_BAD_PARAM;
                 status = i2c_read(i2c_addr, rx, n, I2C_FLAG_STOP);
                 nbytes = (status == ST_OK) ? n : 0u;
+                if (gap) delay_us(gap);
             }
             break;
         case OP_DELAY:
