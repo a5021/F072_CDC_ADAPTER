@@ -38,7 +38,7 @@ ERRORS = {
     0x07: "BUFFER_FULL", 0x08: "BAD_FRAME", 0x09: "ABORTED",
 }
 STAT_NAMES = ("txn", "nack_addr", "nack_data", "arb_lost",
-              "bus_error", "timeout", "overflow")
+              "bus_error", "timeout", "overflow", "retries")
 
 
 def crc16_ccitt(data):
@@ -163,6 +163,7 @@ class F103I2C:
         self.timeout = timeout
         self.retries = retries
         self.seq = 0
+        self.host_retries = 0
         self._opened = False
         self.ser = None
         if port:
@@ -256,6 +257,7 @@ class F103I2C:
                     # A plain NACK only means the polled slave was busy: give
                     # it a moment and retry the same frame. A cleared/wedged
                     # bus needs the 9-clock recovery instead.
+                    self.host_retries += 1
                     if exc.status in (0x03, 0x05):
                         self._exchange(0x41)  # CMD_BUS_CLEAR
                         time.sleep(0.005)
@@ -342,7 +344,7 @@ class F103I2C:
         data = self._exchange(CMD_STATS, bytes([1 if reset else 0]))
         if reset:
             return {}
-        vals = struct.unpack("<7I", data[:28])
+        vals = struct.unpack("<8I", data[:32])
         return dict(zip(STAT_NAMES, vals))
 
     def script(self, blob, chunk=256):

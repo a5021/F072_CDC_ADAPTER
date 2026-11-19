@@ -58,7 +58,7 @@
 /* Stats indices */
 enum {
     STAT_TXN = 0, STAT_NACK_ADDR, STAT_NACK_DATA, STAT_ARB_LOST,
-    STAT_BUS_ERROR, STAT_TIMEOUT, STAT_OVERFLOW, STAT_COUNT
+    STAT_BUS_ERROR, STAT_TIMEOUT, STAT_OVERFLOW, STAT_RETRIES, STAT_COUNT
 };
 
 uint16_t crc16_ccitt(const uint8_t *data, uint16_t len);

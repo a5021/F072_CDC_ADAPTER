@@ -37,7 +37,7 @@ Multi-byte fields are little-endian.
 | 0x31 | CAPTURE_GET | offset u16 | bytes u16, total_events u16, events |
 | 0x32 | GPIO | mask u16, value u16 | value u16 |
 | 0x33 | ADC_SAMPLE | channel u8 | BAD_PARAM in v1 |
-| 0x40 | STATS | subcmd u8 (0 get, 1 reset) | 7 x u32 |
+| 0x40 | STATS | subcmd u8 (0 get, 1 reset) | 8 x u32 |
 | 0x41 | BUS_CLEAR | — | — |
 | 0x50 | RESET | — | no response |
 
@@ -54,8 +54,10 @@ Status codes: 0x00 OK, 0x01 NACK_ADDR, 0x02 NACK_DATA, 0x03 ARB_LOST,
 0x04 BUS_ERROR, 0x05 TIMEOUT, 0x06 BAD_PARAM, 0x07 BUFFER_FULL, 0x08 BAD_FRAME,
 0x09 ABORTED.
 
-Stats counters: transactions, NACK address, NACK data, ARB_LOST, BUS_ERROR,
-TIMEOUT, OVERFLOW.
+Stats counters (8 x u32): transactions, NACK address, NACK data, ARB_LOST,
+BUS_ERROR, TIMEOUT, OVERFLOW, RETRIES. RETRIES counts transfers the firmware
+repeated internally after a NACK; the NACK counters keep counting the raw bus
+events, so both numbers are honest.
 
 `STATS` with `subcmd=1` resets the counters and returns no payload.
 

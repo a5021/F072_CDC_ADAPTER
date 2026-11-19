@@ -58,6 +58,7 @@ static uint8_t i2c_write_retry(uint8_t addr, const uint8_t *data, uint16_t len, 
     for (uint8_t i = 0; i < 3u; i++) {
         st = i2c_write(addr, data, len, flags);
         if (st != ST_NACK_ADDR && st != ST_NACK_DATA) break;
+        stats_inc(STAT_RETRIES);
         delay_us(100u);
     }
     return st;
@@ -69,6 +70,7 @@ static uint8_t i2c_read_retry(uint8_t addr, uint8_t *data, uint16_t len, uint8_t
     for (uint8_t i = 0; i < 3u; i++) {
         st = i2c_read(addr, data, len, flags);
         if (st != ST_NACK_ADDR && st != ST_NACK_DATA) break;
+        stats_inc(STAT_RETRIES);
         delay_us(100u);
     }
     return st;
