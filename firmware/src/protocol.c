@@ -49,6 +49,34 @@ static void put32(uint8_t *p, uint32_t v)
 }
 static uint16_t get16(const uint8_t *p) { return (uint16_t)(p[0] | ((uint16_t)p[1] << 8)); }
 
+/* The polled slave NACKs a byte when it misses an edge under load. Retry the
+ * whole transfer at bus level: a host round-trip costs ~1 ms, this costs
+ * 100 us and keeps the failure invisible to the host protocol. */
+static uint8_t i2c_write_retry(uint8_t addr, const uint8_t *data, uint16_t len, uint8_t flags)
+{
+    uint8_t st = ST_TIMEOUT;
+    for (uint8_t i = 0; i < 3u; i++) {
+        st = i2c_write(addr, data, len, flags);
+        if (st != ST_NACK_ADDR && st != ST_NACK_DATA) break;
+        /* Recovered internally: not a failed operation for the host. */
+        stats_dec(st == ST_NACK_ADDR ? STAT_NACK_ADDR : STAT_NACK_DATA);
+        delay_us(100u);
+    }
+    return st;
+}
+
+static uint8_t i2c_read_retry(uint8_t addr, uint8_t *data, uint16_t len, uint8_t flags)
+{
+    uint8_t st = ST_TIMEOUT;
+    for (uint8_t i = 0; i < 3u; i++) {
+        st = i2c_read(addr, data, len, flags);
+        if (st != ST_NACK_ADDR && st != ST_NACK_DATA) break;
+        stats_dec(st == ST_NACK_ADDR ? STAT_NACK_ADDR : STAT_NACK_DATA);
+        delay_us(100u);
+    }
+    return st;
+}
+
 static void send_frame(uint8_t seq, uint8_t status, const uint8_t *payload, uint16_t len)
 {
     if (len > PAYLOAD_MAX) len = PAYLOAD_MAX;
@@ -92,7 +120,7 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
 
     case CMD_WRITE:
         if (len < 2u) return ST_BAD_PARAM;
-        return i2c_write(p[0], p + 1, (uint16_t)(len - 1u), I2C_FLAG_STOP);
+        return i2c_write_retry(p[0], p + 1, (uint16_t)(len - 1u), I2C_FLAG_STOP);
 
     case CMD_READ:
         if (len != 3u) return ST_BAD_PARAM;
@@ -100,7 +128,7 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
             uint16_t count = get16(p + 1);
             if (count == 0u || count > PAYLOAD_MAX - 4u) return ST_BAD_PARAM;
             uint32_t t0 = timing_us();
-            uint8_t st = i2c_read(p[0], resp, count, I2C_FLAG_STOP);
+            uint8_t st = i2c_read_retry(p[0], resp, count, I2C_FLAG_STOP);
             uint32_t t1 = timing_us();
             if (st != ST_OK) return st;
             put32(resp + count, t1 - t0);
@@ -122,11 +150,11 @@ static uint8_t dispatch(uint8_t cmd, const uint8_t *p, uint16_t len,
             if (rlen == 0u || rlen > PAYLOAD_MAX - 8u) return ST_BAD_PARAM;
             if (gap == 0u && cmd == CMD_WRITE_READ) gap = turnaround_us;
             uint32_t t0 = timing_us();
-            uint8_t st = i2c_write(addr, p + 2u, wlen,
+            uint8_t st = i2c_write_retry(addr, p + 2u, wlen,
                                    (cmd == CMD_REP_START) ? 0u : I2C_FLAG_STOP);
             if (st != ST_OK) return st;
             if (gap) delay_us(gap);
-            st = i2c_read(addr, resp, rlen,
+            st = i2c_read_retry(addr, resp, rlen,
                           (cmd == CMD_REP_START)
                               ? (uint8_t)(I2C_FLAG_STOP | I2C_FLAG_RESTART)
                               : I2C_FLAG_STOP);

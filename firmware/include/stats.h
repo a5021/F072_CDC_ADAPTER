@@ -6,6 +6,7 @@
 
 void stats_init(void);
 void stats_inc(uint8_t which);
+void stats_dec(uint8_t which);
 void stats_reset(void);
 void stats_get(uint32_t *out);   /* STAT_COUNT words */
 
