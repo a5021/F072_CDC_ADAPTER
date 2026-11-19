@@ -14,11 +14,6 @@ void stats_inc(uint8_t which)
     if (which < STAT_COUNT) counters[which]++;
 }
 
-void stats_dec(uint8_t which)
-{
-    if (which < STAT_COUNT && counters[which] > 0u) counters[which]--;
-}
-
 void stats_get(uint32_t *out)
 {
     for (uint8_t i = 0; i < STAT_COUNT; i++) out[i] = counters[i];
