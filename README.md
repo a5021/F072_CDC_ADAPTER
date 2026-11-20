@@ -37,11 +37,17 @@ After flashing, replug USB once so Windows drops the stale COM node.
 ## USB identity
 
 The device enumerates as a class-compliant CDC/ACM serial port with
-`VID:PID = 1209:0001` — the pid.codes portable/open-source test ID, which
-pid.codes reserves for exactly this use. A project-specific PID will replace
-the test one once allocated. Because the function is class-compliant, no
-vendor driver or INF file is required on Windows, Linux or macOS; the host
-driver simply opens the COM port and identifies the firmware through `PING`.
+`VID:PID = 1209:0001`. `0x1209` is the pid.codes open-source vendor ID and PID
+`0x0001` is the test PID it reserves for unregistered projects: this adapter is
+bench equipment for the owbridge project rather than a product, so it keeps the
+test PID on purpose. A dedicated PID is only worth requesting if the adapter
+ever ships.
+
+It reports an `iSerialNumber` built from the STM32 96-bit unique ID, so several
+adapters on one host stay distinct and keep their COM assignment. The function
+is class-compliant, so no vendor driver or INF file is required on Windows,
+Linux or macOS; the host driver simply opens the COM port and identifies the
+firmware through `PING`.
 
 ## Status
 

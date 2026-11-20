@@ -10,7 +10,10 @@
 	No form of line control, baud rate, parity etc setting is implemented, you just get
 	the full USB bandwith to/from your microcontroller with the abi defined in usb.h
 
-	The device has VID 0483 (STMicroelectronics) and PID 5740 (Virtual Com Port).
+	The device has VID 1209 (pid.codes) and PID 0001, the pid.codes test PID
+	reserved for unregistered open-source projects. It provides the standard
+	CDC/ACM string descriptors: manufacturer, product and a serial number
+	derived from the 96-bit chip UID.
 
 	This implementation only uses the USB_LP_CAN_RX0_IRQn interrupt.
 

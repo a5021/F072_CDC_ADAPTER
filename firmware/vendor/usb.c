@@ -7,14 +7,14 @@
  * with 64-byte packets in both directions. VID/PID 1209:0001 is the pid.codes
  * portable/open-source test ID (pid.codes PID 0x0001 is reserved exactly for
  * this), so the device is class-compliant and needs no vendor driver on
- * Windows, Linux or macOS.
+ * Windows, Linux or macOS. String descriptors carry a manufacturer name, a
+ * product name and a serial number derived from the 96-bit chip UID.
  *
  * Only the USB_LP_CAN1_RX0 interrupt is used; the handler must call
  * usb_recv(), which drives the whole stack (see usb.h).
  *
  * Not implemented (by design):
  *   - suspend/wakeup handling
- *   - string descriptors
  *   - SET_DESCRIPTOR, feature requests other than endpoint HALT
  *
  * The linker script must define:
@@ -38,7 +38,7 @@ static uint8_t device_descriptor[] = {
     0x09, 0x12,    // idVendor:  0x1209 (pid.codes)
     0x01, 0x00,    // idProduct: 0x0001 (pid.codes test PID)
     0x00, 0x02,    // bcdDevice: 2.00
-    0, 0, 0,       // manufacturer / product / serial number strings not set
+    1, 2, 3,       // manufacturer / product / serial number strings
     1,             // bNumConfigurations
 };
 
@@ -108,6 +108,65 @@ static uint8_t config_descriptor[] = {
     64, 0, // wMaxPacketSize
     0,     // bInterval, ignored for BULK
 };
+
+/* ------------------------------------------------------------------------- */
+/* 1b. String descriptors                                                    */
+/* ------------------------------------------------------------------------- */
+
+#define DESC_STRING 0x03
+
+// Only one string is ever in flight, and every one of them fits in one packet.
+static uint8_t string_buf[64];
+
+// bLength, bDescriptorType, then UTF-16LE text (ASCII source).
+static size_t put_ascii_string(uint8_t* out, const char* text) {
+    size_t n = 0;
+    while (text[n] && n < 31) { // 2 + 2 * 31 == 64
+        ++n;
+    }
+    out[0] = (uint8_t)(2 + 2 * n);
+    out[1] = DESC_STRING;
+    for (size_t i = 0; i < n; ++i) {
+        out[2 + 2 * i] = (uint8_t)text[i];
+        out[3 + 2 * i] = 0;
+    }
+    return out[0];
+}
+
+// Serial number: the 96-bit unique device ID of the STM32F103 (0x1FFFF7E8)
+// rendered as 24 upper-case hex digits, so the string is stable per chip and
+// two adapters on one host never collapse into the same instance.
+static size_t put_serial_string(uint8_t* out) {
+    static const char hex[] = "0123456789ABCDEF";
+    const volatile uint8_t* uid = (const volatile uint8_t*)0x1FFFF7E8u;
+
+    out[0] = 2 + 2 * 24;
+    out[1] = DESC_STRING;
+    for (int i = 0; i < 12; ++i) {
+        uint8_t byte = uid[i];
+        out[2 + 4 * i + 0] = (uint8_t)hex[byte >> 4];
+        out[2 + 4 * i + 1] = 0;
+        out[2 + 4 * i + 2] = (uint8_t)hex[byte & 0xf];
+        out[2 + 4 * i + 3] = 0;
+    }
+    return out[0];
+}
+
+// Returns the descriptor length, or 0 for a string index we do not provide.
+static size_t build_string_descriptor(uint8_t index, uint8_t* out) {
+    switch (index) {
+    case 0: // supported LANGIDs: English (United States)
+        out[0] = 4;
+        out[1] = DESC_STRING;
+        out[2] = 0x09;
+        out[3] = 0x04;
+        return 4;
+    case 1: return put_ascii_string(out, "owbridge");
+    case 2: return put_ascii_string(out, "F103 USB-I2C adapter");
+    case 3: return put_serial_string(out);
+    }
+    return 0;
+}
 
 /* ------------------------------------------------------------------------- */
 /* 2. Setup request codes                                                    */
@@ -289,16 +348,27 @@ static int handle_get_request(void) {
 
     switch (ctrl_req.req) {
     case REQ_GET_DESCRIPTOR:
-        if (ctrl_req.idx != 0)
-            return 0;
         switch (ctrl_req.val) {
         case 0x0100: // DEVICE
+            if (ctrl_req.idx != 0)
+                return 0;
             len = write_buffer(0, device_descriptor, sizeof device_descriptor);
             break;
         case 0x0200: // CONFIGURATION
+            if (ctrl_req.idx != 0)
+                return 0;
             len = write_buffer(0, config_descriptor, sizeof config_descriptor);
             break;
         default:
+            // STRING: the language id in idx is accepted as-is, we only
+            // support English (US) and answer that LANGID for index 0.
+            if ((ctrl_req.val >> 8) == DESC_STRING) {
+                size_t n = build_string_descriptor((uint8_t)ctrl_req.val, string_buf);
+                if (!n)
+                    return 0;
+                len = write_buffer(0, string_buf, n);
+                break;
+            }
             return 0;
         }
         if (len > ctrl_req.len)
