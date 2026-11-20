@@ -4,8 +4,9 @@
  *
  * Topology: one device, one configuration, two interfaces (CDC control +
  * CDC data), endpoint 0 for control requests and bulk endpoints 0x01/0x81
- * with 64-byte packets in both directions. VID/PID 0483:5740 identifies the
- * device as an STM32 Virtual COM Port, so no vendor driver is needed on
+ * with 64-byte packets in both directions. VID/PID 1209:0001 is the pid.codes
+ * portable/open-source test ID (pid.codes PID 0x0001 is reserved exactly for
+ * this), so the device is class-compliant and needs no vendor driver on
  * Windows, Linux or macOS.
  *
  * Only the USB_LP_CAN1_RX0 interrupt is used; the handler must call
@@ -34,8 +35,8 @@ static uint8_t device_descriptor[] = {
     2,             // bDeviceClass: CDC
     0, 0,          // bDeviceSubClass, bDeviceProtocol
     64,            // bMaxPacketSize0
-    0x83, 0x04,    // idVendor:  0x0483 (STMicroelectronics)
-    0x40, 0x57,    // idProduct: 0x5740 (Virtual COM Port)
+    0x09, 0x12,    // idVendor:  0x1209 (pid.codes)
+    0x01, 0x00,    // idProduct: 0x0001 (pid.codes test PID)
     0x00, 0x02,    // bcdDevice: 2.00
     0, 0, 0,       // manufacturer / product / serial number strings not set
     1,             // bNumConfigurations

@@ -34,8 +34,17 @@ st-flash --serial <SERIAL> --connect-under-reset --reset write build/f103_adapte
 
 After flashing, replug USB once so Windows drops the stale COM node.
 
+## USB identity
+
+The device enumerates as a class-compliant CDC/ACM serial port with
+`VID:PID = 1209:0001` — the pid.codes portable/open-source test ID, which
+pid.codes reserves for exactly this use. A project-specific PID will replace
+the test one once allocated. Because the function is class-compliant, no
+vendor driver or INF file is required on Windows, Linux or macOS; the host
+driver simply opens the COM port and identifies the firmware through `PING`.
+
 ## Status
 
-Verified on bench (COM6, `0483:5740`): PING, SET_SPEED, SET_TURNAROUND,
+Verified on bench (COM6, `1209:0001`): PING, SET_SPEED, SET_TURNAROUND,
 SET_STRETCH_TIMEOUT, STATS, GPIO. I2C transactions require a slave with
 external 2.2 kOhm pull-ups on PB6/PB7.
