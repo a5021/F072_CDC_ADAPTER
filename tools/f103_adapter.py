@@ -67,6 +67,45 @@ def parse_frame(raw):
     return seq, status, raw[5:5 + length]
 
 
+def _read_exact(ser, n, timeout):
+    out = bytearray()
+    deadline = time.monotonic() + timeout
+    while len(out) < n:
+        chunk = ser.read(n - len(out))
+        if chunk:
+            out += chunk
+        elif time.monotonic() > deadline:
+            raise TimeoutError("short reply")
+        else:
+            time.sleep(0.001)
+    return bytes(out)
+
+
+def find_adapter_port(baudrate=921600, timeout=0.5):
+    """Probe every serial port with PING and return the first adapter found.
+
+    Returns None when no port answers. Ports that cannot be opened (or that
+    hold something other than this firmware) are skipped, so an attached
+    programmer or UART bridge is harmless.
+    """
+    from serial.tools import list_ports
+
+    for info in list_ports.comports():
+        try:
+            with serial.Serial(info.device, baudrate, timeout=timeout) as ser:
+                ser.reset_input_buffer()
+                ser.write(build_frame(0, CMD_PING))
+                head = _read_exact(ser, 5, timeout)
+                length = struct.unpack_from("<H", head, 3)[0]
+                rest = _read_exact(ser, length + 2, timeout)
+                _seq, status, data = parse_frame(head + rest)
+                if not status and b"F103I2C" in data:
+                    return info.device
+        except Exception:
+            continue
+    return None
+
+
 OP_WRITE = 0x01
 OP_READ = 0x02
 OP_DELAY = 0x03
@@ -166,6 +205,10 @@ class F103I2C:
         self.host_retries = 0
         self._opened = False
         self.ser = None
+        if port == "auto":
+            port = find_adapter_port(baudrate)
+            if port is None:
+                raise F103Error("no F103 adapter found on any serial port")
         if port:
             self.open(port, baudrate)
 
