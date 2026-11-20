@@ -45,6 +45,6 @@ driver simply opens the COM port and identifies the firmware through `PING`.
 
 ## Status
 
-Verified on bench (COM6, `1209:0001`): PING, SET_SPEED, SET_TURNAROUND,
+Verified on bench (`1209:0001`, enumerated as COM8 on the test host): PING, SET_SPEED, SET_TURNAROUND,
 SET_STRETCH_TIMEOUT, STATS, GPIO. I2C transactions require a slave with
 external 2.2 kOhm pull-ups on PB6/PB7.
